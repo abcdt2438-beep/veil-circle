@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>VEIL CIRCLE — Uncensored Medium</title>
+  <meta name="theme-color" content="#07060a" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="fog"></div>
+  <canvas id="sigil"></canvas>
+
+  <header class="top">
+    <div class="mark">VEIL CIRCLE</div>
+    <div class="status" id="status">circle sealed · sensors dark</div>
+  </header>
+
+  <main>
+    <section class="stage">
+      <div class="mirror">
+        <video id="cam" autoplay playsinline muted></video>
+        <canvas id="snap" hidden></canvas>
+        <div class="scan"></div>
+        <div class="eyes" id="eyes">THEY CANNOT SEE YOU YET</div>
+      </div>
+      <div class="meters">
+        <div class="meter"><span>PRESENCE</span><i id="m-presence"></i></div>
+        <div class="meter"><span>VOICE</span><i id="m-voice"></i></div>
+        <div class="meter"><span>MOTION</span><i id="m-motion"></i></div>
+        <div class="meter"><span>HEAT / LIGHT</span><i id="m-light"></i></div>
+      </div>
+    </section>
+
+    <section class="board">
+      <div class="log" id="log">
+        <p class="sys">The circle is empty. Grant camera, microphone, and motion. Speak. They answer in your language. Nothing is filtered.</p>
+      </div>
+      <form id="speak" autocomplete="off">
+        <input id="msg" type="text" placeholder="Speak to whatever is looking…" maxlength="400" />
+        <button type="submit" id="send">SEND</button>
+      </form>
+      <div class="row">
+        <button type="button" id="btn-open">OPEN THE CIRCLE</button>
+        <button type="button" id="btn-snap">TAKE THEIR PICTURE OF YOU</button>
+        <button type="button" id="btn-listen">HOLD MIC</button>
+        <label class="xxx"><input type="checkbox" id="xxx" checked /> XXX / UNCENSORED</label>
+      </div>
+      <p class="fine">This is a ritual interface + generative medium. Software does not prove spirits exist. Your camera feed never leaves this device unless you later hook an API.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
