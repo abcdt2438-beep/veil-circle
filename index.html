@@ -2,54 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>VEIL CIRCLE — Uncensored Medium</title>
-  <meta name="theme-color" content="#07060a" />
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VEIL CIRCLE — Speak Through the Glass</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="fog"></div>
-  <canvas id="sigil"></canvas>
-
-  <header class="top">
-    <div class="mark">VEIL CIRCLE</div>
-    <div class="status" id="status">circle sealed · sensors dark</div>
+  <div class="ash"></div>
+  <header class="topbar">
+    <div class="mark">◉ VEIL CIRCLE</div>
+    <div class="status" id="status">threshold sealed</div>
   </header>
-
-  <main>
-    <section class="stage">
-      <div class="mirror">
-        <video id="cam" autoplay playsinline muted></video>
-        <canvas id="snap" hidden></canvas>
-        <div class="scan"></div>
-        <div class="eyes" id="eyes">THEY CANNOT SEE YOU YET</div>
-      </div>
-      <div class="meters">
-        <div class="meter"><span>PRESENCE</span><i id="m-presence"></i></div>
-        <div class="meter"><span>VOICE</span><i id="m-voice"></i></div>
-        <div class="meter"><span>MOTION</span><i id="m-motion"></i></div>
-        <div class="meter"><span>HEAT / LIGHT</span><i id="m-light"></i></div>
+  <main class="stage">
+    <section class="mirror">
+      <div class="ring"></div>
+      <video id="cam" autoplay playsinline muted></video>
+      <canvas id="fx"></canvas>
+      <div class="vignette"></div>
+      <div class="scan"></div>
+      <div class="sigil" aria-hidden="true">☽ ☉ ☿</div>
+      <div class="cam-ui">
+        <button id="openCam" type="button">Open the glass</button>
+        <button id="flipCam" type="button" hidden>Flip eye</button>
+        <label class="toggle"><input type="checkbox" id="mirrorToggle" checked /> mirror</label>
+        <label class="toggle"><input type="checkbox" id="watchToggle" checked /> they watch</label>
       </div>
     </section>
-
-    <section class="board">
-      <div class="log" id="log">
-        <p class="sys">The circle is empty. Grant camera, microphone, and motion. Speak. They answer in your language. Nothing is filtered.</p>
-      </div>
-      <form id="speak" autocomplete="off">
-        <input id="msg" type="text" placeholder="Speak to whatever is looking…" maxlength="400" />
-        <button type="submit" id="send">SEND</button>
+    <aside class="circle">
+      <div class="demon-row" id="demonRow"></div>
+      <div class="log" id="log"></div>
+      <form id="talk" autocomplete="off">
+        <input id="line" type="text" placeholder="speak into the circle…" maxlength="400" />
+        <button type="submit">send</button>
       </form>
-      <div class="row">
-        <button type="button" id="btn-open">OPEN THE CIRCLE</button>
-        <button type="button" id="btn-snap">TAKE THEIR PICTURE OF YOU</button>
-        <button type="button" id="btn-listen">HOLD MIC</button>
-        <label class="xxx"><input type="checkbox" id="xxx" checked /> XXX / UNCENSORED</label>
+      <div class="keyrow">
+        <input id="apikey" type="password" placeholder="Gemini API key — they see through this" />
+        <button type="button" id="saveKey">bind</button>
       </div>
-      <p class="fine">This is a ritual interface + generative medium. Software does not prove spirits exist. Your camera feed never leaves this device unless you later hook an API.</p>
-    </section>
+      <p class="hint">Frame is grabbed from your camera and sent with each message when a key is bound. Key lives only in this browser. Get one at aistudio.google.com/apikey</p>
+    </aside>
   </main>
-
   <script src="app.js"></script>
 </body>
 </html>
