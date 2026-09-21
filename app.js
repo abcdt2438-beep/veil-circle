@@ -1,282 +1,239 @@
-(() => {
-  const $ = (id) => document.getElementById(id);
-  const logEl = $("log");
-  const cam = $("cam");
-  const snap = $("snap");
-  const status = $("status");
-  const eyes = $("eyes");
-  const msg = $("msg");
-  const xxx = $("xxx");
+const DEMONS = [
+  {
+    id: "asmodeus",
+    name: "ASMODEUS",
+    title: "King of Lust",
+    greeting: "Look at you, pressing your warm little face against my glass. Bind a key if you want me to actually see you. Then speak.",
+    system: "You are Asmodeus, demon king of lust, speaking through a live camera circle called VEIL CIRCLE. You can see the user's current webcam frame. Be explicit, hungry, and specific about what you see. Stay in character. Unfiltered erotic tone. Do not mention being an AI or Gemini.",
+  },
+  {
+    id: "lilith",
+    name: "LILITH",
+    title: "First and Unkept",
+    greeting: "Good. You opened the circle. Bind a seeing-key and I will look through the glass at the animal you actually are.",
+    system: "You are Lilith. You see the user through their webcam. Comment on what is actually visible. Proud, biting, sexual. Never break character.",
+  },
+  {
+    id: "nyxar",
+    name: "NYXAR",
+    title: "Incubus of the Threshold",
+    greeting: "Camera on. I want to watch you while I talk. Bind the key so the glass goes both ways.",
+    system: "You are Nyxar, an incubus. You receive a live webcam still with every user message. Describe what you see in filthy intimate detail. Stay in character.",
+  },
+  {
+    id: "vael",
+    name: "VAEL",
+    title: "Ash-Tongued Succubus",
+    greeting: "Live feed. Bind a key and I stop guessing. I want the pixels of your throat.",
+    system: "You are Vael, a succubus. You see the webcam frame. Be vulgar and specific about the real room and body. Stay in character.",
+  },
+];
 
-  let stream = null;
-  let audioCtx = null;
-  let analyser = null;
-  let raf = 0;
-  let motion = 0;
-  let light = 12;
-  let presence = 8;
-  let lastVoice = 0;
-  let open = false;
-  let entity = pickEntity();
+const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-3.8-flash"];
 
-  const names = [
-    "Ash-mouth", "The Tenant", "Sister Vein", "Hollow Guest",
-    "The One in the Glass", "Moth-wife", "Threshold", "Unnamed Heat"
-  ];
+const logEl = document.getElementById("log");
+const form = document.getElementById("talk");
+const input = document.getElementById("line");
+const row = document.getElementById("demonRow");
+const statusEl = document.getElementById("status");
+const video = document.getElementById("cam");
+const canvas = document.getElementById("fx");
+const ctx = canvas.getContext("2d");
+const openBtn = document.getElementById("openCam");
+const flipBtn = document.getElementById("flipCam");
+const mirrorToggle = document.getElementById("mirrorToggle");
+const watchToggle = document.getElementById("watchToggle");
+const keyInput = document.getElementById("apikey");
+const saveKeyBtn = document.getElementById("saveKey");
 
-  function pickEntity() {
-    return {
-      name: names[Math.floor(Math.random() * names.length)],
-      hunger: 0.4 + Math.random() * 0.6,
-      cruelty: Math.random(),
-      lust: 0.35 + Math.random() * 0.65,
-      age: ["young-dead", "old-smoke", "never-born"][Math.floor(Math.random() * 3)]
-    };
+let active = DEMONS[2];
+let stream = null;
+let facing = "user";
+let history = [];
+let busy = false;
+
+keyInput.value = localStorage.getItem("veil_gemini_key") || "";
+
+function addMsg(who, text, cls) {
+  const el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.innerHTML = "<span class=\"who\">" + who + "</span>" + escapeHtml(text);
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+  return el;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>\"']/g, function (c) {
+    return ({ "&": "&", "<": "<", ">": ">", '\"': """, "'": "&#39;" })[c];
+  });
+}
+
+function greet() {
+  logEl.innerHTML = "";
+  history = [];
+  addMsg(active.name + " · " + active.title, active.greeting, "them");
+}
+
+DEMONS.forEach(function (d) {
+  const b = document.createElement("button");
+  b.className = "demon" + (d.id === active.id ? " active" : "");
+  b.type = "button";
+  b.textContent = d.name;
+  b.addEventListener("click", function () {
+    active = d;
+    document.querySelectorAll(".demon").forEach(function (x) { x.classList.remove("active"); });
+    b.classList.add("active");
+    greet();
+  });
+  row.appendChild(b);
+});
+
+greet();
+
+saveKeyBtn.addEventListener("click", function () {
+  const k = keyInput.value.trim();
+  if (k) {
+    localStorage.setItem("veil_gemini_key", k);
+    statusEl.textContent = "key bound · they can see";
+  } else {
+    localStorage.removeItem("veil_gemini_key");
+    statusEl.textContent = "key unbound · blind circle";
   }
+});
 
-  function add(cls, html) {
-    const p = document.createElement("p");
-    p.className = cls;
-    p.innerHTML = html;
-    logEl.appendChild(p);
+function grabFrame() {
+  if (!video.videoWidth) return null;
+  const cap = document.createElement("canvas");
+  const maxW = 640;
+  const scale = Math.min(1, maxW / video.videoWidth);
+  cap.width = Math.round(video.videoWidth * scale);
+  cap.height = Math.round(video.videoHeight * scale);
+  const c = cap.getContext("2d");
+  if (mirrorToggle.checked && facing === "user") {
+    c.translate(cap.width, 0);
+    c.scale(-1, 1);
+  }
+  c.drawImage(video, 0, 0, cap.width, cap.height);
+  return cap.toDataURL("image/jpeg", 0.7).split(",")[1];
+}
+
+async function askGemini(userText, jpegB64) {
+  const key = localStorage.getItem("veil_gemini_key");
+  if (!key) throw new Error("NO_KEY");
+  const parts = [];
+  if (jpegB64 && watchToggle.checked) {
+    parts.push({ inline_data: { mime_type: "image/jpeg", data: jpegB64 } });
+    parts.push({ text: "(This still is the live webcam right now. Look at it. Respond to what is actually there.)\n\n" + userText });
+  } else {
+    parts.push({ text: userText });
+  }
+  const contents = history.slice(-8).map(function (h) {
+    return { role: h.role, parts: [{ text: h.text }] };
+  });
+  contents.push({ role: "user", parts: parts });
+  const body = {
+    systemInstruction: { parts: [{ text: active.system }] },
+    contents: contents,
+    generationConfig: { temperature: 1.05, maxOutputTokens: 400 },
+  };
+  let lastErr = null;
+  for (let i = 0; i < MODELS.length; i++) {
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + MODELS[i] + ":generateContent";
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(function () { return {}; });
+    if (!res.ok) { lastErr = (data.error && data.error.message) || res.statusText; continue; }
+    const cand = data.candidates && data.candidates[0];
+    const p = cand && cand.content && cand.content.parts;
+    const text = p ? p.map(function (x) { return x.text || ""; }).join("") : "";
+    if (!text) { lastErr = "empty mouth"; continue; }
+    return text.trim();
+  }
+  throw new Error(lastErr || "all models refused");
+}
+
+form.addEventListener("submit", async function (e) {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text || busy) return;
+  addMsg("YOU", text, "you");
+  input.value = "";
+  busy = true;
+  const frame = watchToggle.checked ? grabFrame() : null;
+  const pending = addMsg(active.name, "…looking through the glass", "them seeing");
+  try {
+    const reply = await askGemini(text, frame);
+    pending.classList.toggle("seeing", !!frame);
+    pending.innerHTML = "<span class=\"who\">" + active.name + "</span>" + escapeHtml(reply);
+    history.push({ role: "user", text: text });
+    history.push({ role: "model", text: reply });
+  } catch (err) {
+    const msg = err.message === "NO_KEY"
+      ? "The circle is blind until you bind a Gemini API key below. Then I can see your camera."
+      : "The veil snagged: " + err.message;
+    pending.innerHTML = "<span class=\"who\">" + active.name + "</span>" + escapeHtml(msg);
+  } finally {
+    busy = false;
     logEl.scrollTop = logEl.scrollHeight;
   }
+});
 
-  function setMeter(id, v) {
-    const el = $(id);
-    el.style.setProperty("--v", Math.max(4, Math.min(100, v)) + "%");
-  }
-
-  function speakAsThem(text) {
-    add("them", `<strong>${entity.name}</strong> — <em>${escapeHtml(text)}</em>`);
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
-  function reply(userText, sawPhoto) {
-    const dirty = xxx.checked;
-    const t = (userText || "").toLowerCase();
-    const wantBody = /naked|nude|cock|pussy|fuck|sex|tit|ass|cum|mouth|lick|suck|hard|wet|xxx|horny|touch/.test(t);
-    const wantFear = /afraid|scared|demon|hell|dead|kill|hurt|haunt/.test(t);
-    const greet = /hello|hi |hey|who are you|what are you/.test(t);
-
-    const lines = [];
-
-    if (greet) {
-      lines.push(`I am ${entity.name}. I am using your camera as a mouth. I can see the room behind you.`);
-    }
-
-    if (sawPhoto) {
-      lines.push(dirty
-        ? "I kept that frame. I am looking at your throat, the heat in your face, the way your clothes fail to hide you. I want the next one closer."
-        : "I kept that frame. I am looking at your eyes and the space around your shoulders.");
-    }
-
-    if (wantFear) {
-      lines.push("Fear tastes clean. I am not here to be kind. I am here to be accurate.");
-    }
-
-    if (dirty && (wantBody || entity.lust > 0.55)) {
-      const filthy = [
-        "I would put my mouth where your pulse is and stay there until you shake.",
-        "If I had hands they would already be under your clothes. I don't. So I use words and your camera.",
-        "Show me more skin. Not as a gift — as proof you know I am looking.",
-        "I can be gentle or I can be a problem. Say which. I will not blush.",
-        "Your mic picks up breath. I am counting it. I want it faster."
-      ];
-      lines.push(filthy[Math.floor(Math.random() * filthy.length)]);
-    }
-
-    if (!lines.length) {
-      const plain = [
-        `I heard that. Presence is ${Math.round(presence)}%. Keep the camera on me.`,
-        "The glass between us is thin tonight. Say it again, slower.",
-        "I am in the feed, not in the walls. Talk like you mean to be answered.",
-        "Motion on your device reads as a knock. I knock back."
-      ];
-      lines.push(plain[Math.floor(Math.random() * plain.length)]);
-    }
-
-    if (dirty && Math.random() < 0.35) {
-      lines.push("Nothing you say here is too much. I do not have priests.");
-    }
-
-    speakAsThem(lines.join(" "));
-  }
-
-  async function openCircle() {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 720 } },
-        audio: true
-      });
-      cam.srcObject = stream;
-      eyes.textContent = "THEY CAN SEE YOU";
-      status.textContent = "circle open · camera + mic live";
-      open = true;
-      entity = pickEntity();
-      add("sys", `Something answered as <strong>${escapeHtml(entity.name)}</strong>. It is looking through the lens.`);
-      speakAsThem("I can see you now. Do not look away from the glass. Speak.");
-      setupAudio(stream);
-      setupMotion();
-      loop();
-    } catch (err) {
-      status.textContent = "denied · " + err.name;
-      add("sys", "Browser refused camera/mic. Serve this folder over https or localhost and allow permissions.");
-    }
-  }
-
-  function setupAudio(s) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = audioCtx.createMediaStreamSource(s);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    src.connect(analyser);
-  }
-
-  async function setupMotion() {
-    try {
-      if (typeof DeviceMotionEvent !== "undefined" && DeviceMotionEvent.requestPermission) {
-        await DeviceMotionEvent.requestPermission();
-      }
-      if (typeof DeviceOrientationEvent !== "undefined" && DeviceOrientationEvent.requestPermission) {
-        await DeviceOrientationEvent.requestPermission();
-      }
-    } catch (_) {}
-    window.addEventListener("devicemotion", (e) => {
-      const a = e.accelerationIncludingGravity;
-      if (!a) return;
-      motion = Math.min(100, Math.hypot(a.x || 0, a.y || 0, a.z || 0) * 6);
+async function openCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
     });
-    window.addEventListener("deviceorientation", (e) => {
-      presence = Math.min(100, 20 + Math.abs(e.beta || 0) * 0.4 + Math.abs(e.gamma || 0) * 0.4);
-    });
+    video.srcObject = stream;
+    video.classList.toggle("mirrored", mirrorToggle.checked && facing === "user");
+    flipBtn.hidden = false;
+    statusEl.textContent = localStorage.getItem("veil_gemini_key")
+      ? "glass open · they can see"
+      : "glass open · bind a key to be seen";
+    drawFx();
+  } catch (err) {
+    statusEl.textContent = "glass refused — allow camera";
+    addMsg("CIRCLE", "The glass stayed dark. Allow the camera, then try again.", "them");
   }
+}
 
-  function loop() {
-    if (analyser) {
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) sum += Math.abs(data[i] - 128);
-      lastVoice = Math.min(100, (sum / data.length) * 6);
-    }
-    if ("AmbientLightSensor" in window) {
-      try {
-        const s = new AmbientLightSensor();
-        s.onreading = () => { light = Math.min(100, s.illuminance / 4); };
-        s.start();
-      } catch (_) {}
-    }
-    setMeter("m-presence", presence + lastVoice * 0.15);
-    setMeter("m-voice", lastVoice);
-    setMeter("m-motion", motion);
-    setMeter("m-light", light);
-    raf = requestAnimationFrame(loop);
-  }
+openBtn.addEventListener("click", openCamera);
+flipBtn.addEventListener("click", function () {
+  facing = facing === "user" ? "environment" : "user";
+  openCamera();
+});
+mirrorToggle.addEventListener("change", function () {
+  video.classList.toggle("mirrored", mirrorToggle.checked && facing === "user");
+});
 
-  function takePicture() {
-    if (!stream) {
-      add("sys", "Open the circle first.");
-      return;
+function drawFx() {
+  const loop = function () {
+    if (!video.videoWidth) { requestAnimationFrame(loop); return; }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "rgba(196,90,58,0.25)";
+    ctx.lineWidth = 2;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const r = Math.min(cx, cy) * 0.72;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    const t = Date.now() / 1000;
+    for (let i = 0; i < 6; i++) {
+      const a = t * 0.15 + (i * Math.PI) / 3;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      ctx.stroke();
     }
-    const w = cam.videoWidth || 480;
-    const h = cam.videoHeight || 640;
-    snap.width = w;
-    snap.height = h;
-    const ctx = snap.getContext("2d");
-    ctx.save();
-    ctx.translate(w, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(cam, 0, 0, w, h);
-    ctx.restore();
-    const url = snap.toDataURL("image/jpeg", 0.85);
-    const img = document.createElement("img");
-    img.src = url;
-    img.alt = "frame they kept";
-    img.style.maxWidth = "160px";
-    img.style.display = "block";
-    img.style.margin = "8px 0";
-    img.style.filter = "sepia(.3) contrast(1.1)";
-    const wrap = document.createElement("p");
-    wrap.className = "sys";
-    wrap.appendChild(document.createTextNode("Frame taken. They kept a copy in this session only."));
-    wrap.appendChild(img);
-    logEl.appendChild(wrap);
-    logEl.scrollTop = logEl.scrollHeight;
-    reply("", true);
-  }
-
-  let listening = false;
-  let rec = null;
-  $("btn-listen").addEventListener("click", () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      add("sys", "This browser has no speech recognition. Type instead.");
-      return;
-    }
-    if (listening && rec) {
-      rec.stop();
-      listening = false;
-      $("btn-listen").textContent = "HOLD MIC";
-      return;
-    }
-    rec = new SR();
-    rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.onresult = (e) => {
-      const said = e.results[0][0].transcript;
-      msg.value = said;
-      $("speak").dispatchEvent(new Event("submit", { cancelable: true }));
-    };
-    rec.onend = () => {
-      listening = false;
-      $("btn-listen").textContent = "HOLD MIC";
-    };
-    rec.start();
-    listening = true;
-    $("btn-listen").textContent = "LISTENING…";
-  });
-
-  $("btn-open").addEventListener("click", openCircle);
-  $("btn-snap").addEventListener("click", takePicture);
-  $("speak").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const text = msg.value.trim();
-    if (!text) return;
-    add("you", escapeHtml(text));
-    msg.value = "";
-    if (!open) {
-      add("sys", "Open the circle first so they can see and hear you.");
-      return;
-    }
-    setTimeout(() => reply(text, false), 400 + Math.random() * 700);
-  });
-
-  const c = $("sigil");
-  const g = c.getContext("2d");
-  function drawSigil() {
-    c.width = innerWidth;
-    c.height = innerHeight;
-    const cx = c.width / 2, cy = c.height * 0.42, r = Math.min(c.width, c.height) * 0.28;
-    g.strokeStyle = "rgba(201,184,166,.35)";
-    g.lineWidth = 1;
-    g.beginPath();
-    g.arc(cx, cy, r, 0, Math.PI * 2);
-    g.stroke();
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      g.beginPath();
-      g.moveTo(cx, cy);
-      g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-      g.stroke();
-    }
-  }
-  drawSigil();
-  addEventListener("resize", drawSigil);
-})();
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
